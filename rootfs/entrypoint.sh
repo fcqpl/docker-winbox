@@ -42,7 +42,7 @@ else
     # Xvnc and websockify only on unix sockets, nginx in front of them does
     # the TCP ports and the ALLOW list
     run=/tmp/winbox
-    mkdir -p "$run/nginx"
+    mkdir -p "$run/nginx" || exit 1
 
     echo "Xvnc $DISPLAY ${RESOLUTION}x$DEPTH"
     Xvnc "$DISPLAY" -geometry "$RESOLUTION" -depth "$DEPTH" -rfbport -1 -rfbunixpath "$run/vnc.sock" \
