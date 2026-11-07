@@ -13,7 +13,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates curl unzip tini \
-        tigervnc-standalone-server tigervnc-tools python3-websockify \
+        tigervnc-standalone-server tigervnc-tools python3-websockify openssl \
         nginx libnginx-mod-stream \
         openbox xterm x11-utils fonts-dejavu-core \
         libgl1 libegl1 \
@@ -30,7 +30,8 @@ RUN mkdir -p /usr/share/novnc \
         | tar -xz --strip-components=1 -C /usr/share/novnc \
         "noVNC-${NOVNC_VERSION}/app" "noVNC-${NOVNC_VERSION}/core" "noVNC-${NOVNC_VERSION}/vendor" \
         "noVNC-${NOVNC_VERSION}/vnc.html" "noVNC-${NOVNC_VERSION}/vnc_lite.html" \
-        "noVNC-${NOVNC_VERSION}/package.json" "noVNC-${NOVNC_VERSION}/LICENSE.txt"
+        "noVNC-${NOVNC_VERSION}/package.json" "noVNC-${NOVNC_VERSION}/LICENSE.txt" \
+    && sed -i 's|</head>|    <script type="module" src="clipboard.js"></script>\n</head>|' /usr/share/novnc/vnc.html
 
 RUN curl -fsSLo /tmp/winbox.zip "https://download.mikrotik.com/routeros/winbox/${WINBOX_VERSION}/WinBox_Linux.zip" \
     && echo "$(curl -fsSL "https://download.mikrotik.com/routeros/winbox/${WINBOX_VERSION}/WinBox_Linux.zip.sha256" | cut -d' ' -f1)  /tmp/winbox.zip" | sha256sum -c - \

@@ -8,23 +8,24 @@ Inspired by [alexhorner/winbox-dockerised](https://github.com/alexhorner/winbox-
 
 - native Linux build of WinBox 4, no Wine
 - Debian trixie, TigerVNC `Xvnc`, openbox
-- noVNC on port 6080: open it in a browser, WinBox fills the tab and follows its size
+- noVNC over HTTPS on port 6080: open it in a browser, WinBox fills the tab and follows its size
+- copy and paste between your computer and WinBox with the usual keys
 - ACL: only private networks get in by default (`ALLOW`)
-- settings, saved addresses and workspaces kept in `/data`
+- settings, saved addresses and workspaces kept in `/data`, survive container updates
 - rebuilt every week with the latest stable WinBox
 
 ### Quick start
 
 ```
-docker run -d --name winbox --network host -v ./data:/data ghcr.io/fcqpl/docker-winbox
+docker run -d --name winbox --restart unless-stopped --network host -v winbox-data:/data ghcr.io/fcqpl/docker-winbox
 ```
 
-Then open `http://<docker-host>:6080/` or point a VNC client at `<docker-host>:5900`.
+Then open `https://<docker-host>:6080/` (self-signed certificate, accept it once) or point a VNC client at `<docker-host>:5900`.
 
 Host networking lets WinBox see MikroTik neighbors and connect by MAC address on the host's L2 segments. Without it only IP connections work:
 
 ```
-docker run -d --name winbox -p 6080:6080 -p 5900:5900 -v ./data:/data ghcr.io/fcqpl/docker-winbox
+docker run -d --name winbox --restart unless-stopped -p 6080:6080 -p 5900:5900 -v winbox-data:/data ghcr.io/fcqpl/docker-winbox
 ```
 
 #### docker-compose.yml
@@ -51,11 +52,28 @@ services:
 | `VNC_PASSWORD` | empty | VNC (and noVNC) password, VNC auth uses only the first 8 characters. Empty = no password |
 | `VNC_PORT` | `5900` | VNC port |
 | `NOVNC` | `true` | `false` disables noVNC |
-| `NOVNC_PORT` | `6080` | noVNC port |
+| `NOVNC_PORT` | `6080` | noVNC port (HTTPS) |
 | `ALLOW` | private ranges | Networks allowed to reach VNC and noVNC, comma or space separated, `all` = anyone. Default: `127.0.0.0/8 ::1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 fc00::/7 fe80::/10` |
 | `LISTEN` | empty | Addresses to bind VNC and noVNC to, comma separated, e.g. `127.0.0.1,::1` behind a reverse proxy or SSH tunnel. Empty = all |
 | `PUID` / `PGID` | `1000` | UID/GID WinBox runs as, owner of `/data` |
 | `EXTERNAL_DISPLAY` | `false` | `true` = no built-in VNC, WinBox goes to the X display in `DISPLAY` (GNS3) |
+
+### Data
+
+Everything WinBox keeps (settings, saved addresses, workspaces, cache) and the noVNC certificate live in `/data`. Keep it on a named volume (`-v winbox-data:/data`) or a host directory (`-v /srv/winbox:/data`) and it survives `docker rm`, image updates and host reboots. Without `-v` Docker creates an anonymous volume that a recreated container no longer sees.
+
+### HTTPS and clipboard
+
+noVNC is served over HTTPS only (a plain `http://` request on the port gets redirected), because browsers give the clipboard API to secure pages only. On first start a self-signed certificate for the container's hostname and addresses is generated into `/data/tls`. To use your own, put `cert.pem` (with the chain) and `key.pem` there and restart.
+
+With that in place:
+
+- whatever is copied in WinBox lands in the local clipboard
+- Ctrl+V, Ctrl+Shift+V and Shift+Insert in WinBox paste the local clipboard
+- Chromium-based browsers ask once for clipboard access; after that the local clipboard is also synced whenever you come back to the tab, so paste from WinBox's own menus works too
+- Firefox shows a small "Paste" button on every paste, that is how Firefox guards clipboard reads
+
+A native VNC client (TigerVNC, RealVNC) syncs the clipboard on its own.
 
 ### Access control
 

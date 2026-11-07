@@ -42,6 +42,8 @@ else
     # Xvnc and websockify only on unix sockets, nginx in front of them does
     # the TCP ports and the ALLOW list
     run=/tmp/winbox
+    # Leftovers of the previous run survive docker restart
+    rm -rf "$run" /tmp/.X0-lock /tmp/.X11-unix/X0
     mkdir -p "$run/nginx" || exit 1
 
     echo "Xvnc $DISPLAY ${RESOLUTION}x$DEPTH"
@@ -54,16 +56,16 @@ else
         pids+=($!)
     fi
 
-    # Empty LISTEN = all interfaces
+    # Empty LISTEN = all interfaces, $2 = extra listen parameters (ssl)
     listen() {
         local a
         if [ -z "$LISTEN" ]; then
-            echo "listen $1;"
-            [ -e /proc/net/if_inet6 ] && echo "listen [::]:$1;"
+            echo "listen $1 $2;"
+            [ -e /proc/net/if_inet6 ] && echo "listen [::]:$1 $2;"
         else
             for a in ${LISTEN//,/ }; do
                 [[ $a == *:* ]] && a="[$a]"
-                echo "listen $a:$1;"
+                echo "listen $a:$1 $2;"
             done
         fi
     }
@@ -92,7 +94,21 @@ stream {
 }
 EOF
     if [ "$NOVNC" = true ]; then
-        echo "noVNC on ${LISTEN:-*}:$NOVNC_PORT, allowed from: $ALLOW"
+        # HTTPS only, browsers give the clipboard to secure pages only.
+        # Own certificate: /data/tls/cert.pem + key.pem, else a self-signed one
+        if [ ! -s "$HOME/tls/cert.pem" ] || [ ! -s "$HOME/tls/key.pem" ]; then
+            echo "Generating a self-signed certificate in $HOME/tls"
+            mkdir -p "$HOME/tls"
+            san="DNS:$(hostname)"
+            for a in $(hostname -I); do
+                san+=",IP:$a"
+            done
+            openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
+                -days 3650 -subj "/CN=$(hostname)" -addext "subjectAltName=$san" \
+                -keyout "$HOME/tls/key.pem" -out "$HOME/tls/cert.pem" 2>/dev/null || exit 1
+        fi
+
+        echo "noVNC on https://${LISTEN:-*}:$NOVNC_PORT, allowed from: $ALLOW"
         cat >> "$run/nginx/nginx.conf" <<EOF
 
 http {
@@ -105,8 +121,12 @@ http {
     scgi_temp_path $run/nginx/scgi;
 
     server {
-        $(listen "$NOVNC_PORT")
+        $(listen "$NOVNC_PORT" ssl)
         $acl
+        ssl_certificate $HOME/tls/cert.pem;
+        ssl_certificate_key $HOME/tls/key.pem;
+        # Plain HTTP on the TLS port only gets a redirect
+        error_page 497 =301 https://\$http_host\$request_uri;
         root /usr/share/novnc;
 
         location = /websockify {
@@ -126,6 +146,9 @@ EOF
 fi
 
 until xdpyinfo >/dev/null 2>&1; do
+    for p in "${pids[@]}"; do
+        kill -0 "$p" 2>/dev/null || exit 1
+    done
     sleep 0.2
 done
 
