@@ -1,0 +1,14 @@
+services:
+  winbox:
+    image: ghcr.io/fcqpl/docker-winbox:latest
+    build: .
+    container_name: winbox
+    restart: unless-stopped
+    # Host network: neighbor discovery and MAC connections need L2 access
+    network_mode: host
+    environment:
+      RESOLUTION: 1600x900
+      # VNC_PASSWORD: changeme
+      # LISTEN: 127.0.0.1
+    volumes:
+      - ./data:/data
