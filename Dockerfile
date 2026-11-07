@@ -8,12 +8,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
     QT_QPA_PLATFORM=xcb \
     TINI_SUBREAPER=1
 
-# Xvnc + websockify + openbox, runtime libs of the static Qt build in
+# Xvnc + websockify + nginx (ACL) + openbox, runtime libs of the static Qt build in
 # WinBox_Linux.zip, a few network tools for GNS3 topologies
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates curl unzip tini \
         tigervnc-standalone-server tigervnc-tools python3-websockify \
+        nginx libnginx-mod-stream \
         openbox xterm x11-utils fonts-dejavu-core \
         libgl1 libegl1 \
         libx11-6 libx11-xcb1 libxcb1 libxcb-glx0 libxcb-icccm4 libxcb-image0 \
@@ -45,6 +46,7 @@ RUN curl -fsSLo /tmp/winbox.zip "https://download.mikrotik.com/routeros/winbox/$
 RUN sed -i \
         -e 's|<number>4</number>|<number>1</number>|' \
         -e 's|<applications>|<applications>\n  <application class="WinBox" type="normal"><decor>no</decor><maximized>yes</maximized></application>|' \
+        -e '\|/var/lib/openbox/debian-menu.xml|d' \
         /etc/xdg/openbox/rc.xml
 
 COPY rootfs/ /

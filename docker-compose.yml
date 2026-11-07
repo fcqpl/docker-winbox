@@ -9,6 +9,7 @@ services:
     environment:
       RESOLUTION: 1600x900
       # VNC_PASSWORD: changeme
+      # ALLOW: 10.0.0.0/8, 192.168.0.0/16
       # LISTEN: 127.0.0.1
     volumes:
       - ./data:/data

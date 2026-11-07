@@ -9,6 +9,7 @@ Inspired by [alexhorner/winbox-dockerised](https://github.com/alexhorner/winbox-
 - native Linux build of WinBox 4, no Wine
 - Debian trixie, TigerVNC `Xvnc`, openbox
 - noVNC on port 6080: open it in a browser, WinBox fills the tab and follows its size
+- ACL: only private networks get in by default (`ALLOW`)
 - settings, saved addresses and workspaces kept in `/data`
 - rebuilt every week with the latest stable WinBox
 
@@ -51,11 +52,29 @@ services:
 | `VNC_PORT` | `5900` | VNC port |
 | `NOVNC` | `true` | `false` disables noVNC |
 | `NOVNC_PORT` | `6080` | noVNC port |
-| `LISTEN` | empty | Address to bind VNC and noVNC to, e.g. `127.0.0.1` behind a reverse proxy or SSH tunnel. Empty = all |
+| `ALLOW` | private ranges | Networks allowed to reach VNC and noVNC, comma or space separated, `all` = anyone. Default: `127.0.0.0/8 ::1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 fc00::/7 fe80::/10` |
+| `LISTEN` | empty | Addresses to bind VNC and noVNC to, comma separated, e.g. `127.0.0.1,::1` behind a reverse proxy or SSH tunnel. Empty = all |
 | `PUID` / `PGID` | `1000` | UID/GID WinBox runs as, owner of `/data` |
 | `EXTERNAL_DISPLAY` | `false` | `true` = no built-in VNC, WinBox goes to the X display in `DISPLAY` (GNS3) |
 
-Without `VNC_PASSWORD` anyone who reaches the ports gets the WinBox screen, including saved sessions. Set a password or `LISTEN` when the host is not on a trusted network.
+### Access control
+
+Xvnc and websockify listen only on unix sockets inside the container. The TCP ports are served by nginx, which checks the client address against `ALLOW` (`allow`/`deny` rules, first match wins) and logs refused clients to the container log:
+
+```
+[error] access forbidden by rule while initializing session, client: 203.0.113.7, server: 0.0.0.0:5900
+```
+
+By default only private, CGNAT, loopback and link-local addresses get in, so a host with a public address does not expose WinBox to the internet. Examples:
+
+```
+-e ALLOW="10.105.0.0/16, 2001:db8:100::/48"
+-e ALLOW=all
+```
+
+nginx sees the address the connection comes from. With `--network host` that is the real client. With published ports (`-p`) IPv4 clients usually keep their address, but connections that go through `docker-proxy` (IPv6 clients of an IPv4-only container, hairpin, hosts with the userland proxy) show up as the Docker gateway, e.g. `172.17.0.1`, which the default list allows. Use host networking or publish on IPv4 only (`-p 0.0.0.0:6080:6080`) if that matters.
+
+`ALLOW` is not a password: without `VNC_PASSWORD` anyone in the allowed networks gets the WinBox screen, including saved sessions.
 
 ### Use with GNS3
 

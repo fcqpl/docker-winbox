@@ -7,6 +7,7 @@
 : "${NOVNC:=true}"
 : "${NOVNC_PORT:=6080}"
 : "${LISTEN:=}"
+: "${ALLOW:=127.0.0.0/8 ::1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 fc00::/7 fe80::/10}"
 : "${EXTERNAL_DISPLAY:=false}"
 : "${PUID:=1000}"
 : "${PGID:=1000}"
@@ -38,20 +39,90 @@ else
         chmod 600 "$HOME/.vnc/passwd"
         vnc_auth=(-SecurityTypes VncAuth -rfbauth "$HOME/.vnc/passwd")
     fi
-    # Empty LISTEN = all interfaces
-    vnc_listen=()
-    [ -n "$LISTEN" ] && vnc_listen=(-interface "$LISTEN")
+    # Xvnc and websockify only on unix sockets, nginx in front of them does
+    # the TCP ports and the ALLOW list
+    run=/tmp/winbox
+    mkdir -p "$run/nginx"
 
-    echo "Xvnc $DISPLAY ${RESOLUTION}x$DEPTH on ${LISTEN:-*}:$VNC_PORT"
-    Xvnc "$DISPLAY" -geometry "$RESOLUTION" -depth "$DEPTH" -rfbport "$VNC_PORT" \
-        "${vnc_listen[@]}" "${vnc_auth[@]}" -AlwaysShared -nolisten tcp &
+    echo "Xvnc $DISPLAY ${RESOLUTION}x$DEPTH"
+    Xvnc "$DISPLAY" -geometry "$RESOLUTION" -depth "$DEPTH" -rfbport -1 -rfbunixpath "$run/vnc.sock" \
+        "${vnc_auth[@]}" -AlwaysShared -nolisten tcp -nolisten local &
     pids+=($!)
 
     if [ "$NOVNC" = true ]; then
-        echo "noVNC on ${LISTEN:-*}:$NOVNC_PORT"
-        websockify --web /usr/share/novnc "${LISTEN:+$LISTEN:}$NOVNC_PORT" "${LISTEN:-localhost}:$VNC_PORT" >/dev/null 2>&1 &
+        websockify --unix-listen="$run/websockify.sock" --unix-target="$run/vnc.sock" >/dev/null 2>&1 &
         pids+=($!)
     fi
+
+    # Empty LISTEN = all interfaces
+    listen() {
+        local a
+        if [ -z "$LISTEN" ]; then
+            echo "listen $1;"
+            [ -e /proc/net/if_inet6 ] && echo "listen [::]:$1;"
+        else
+            for a in ${LISTEN//,/ }; do
+                [[ $a == *:* ]] && a="[$a]"
+                echo "listen $a:$1;"
+            done
+        fi
+    }
+    acl=""
+    for a in ${ALLOW//,/ }; do
+        acl+="allow $a; "
+    done
+    acl+="deny all;"
+
+    echo "VNC on ${LISTEN:-*}:$VNC_PORT, allowed from: $ALLOW"
+    cat > "$run/nginx/nginx.conf" <<EOF
+load_module /usr/lib/nginx/modules/ngx_stream_module.so;
+daemon off;
+pid $run/nginx/nginx.pid;
+error_log stderr warn;
+worker_processes 1;
+events { worker_connections 256; }
+
+stream {
+    server {
+        $(listen "$VNC_PORT")
+        $acl
+        proxy_pass unix:$run/vnc.sock;
+        proxy_timeout 1d;
+    }
+}
+EOF
+    if [ "$NOVNC" = true ]; then
+        echo "noVNC on ${LISTEN:-*}:$NOVNC_PORT, allowed from: $ALLOW"
+        cat >> "$run/nginx/nginx.conf" <<EOF
+
+http {
+    include /etc/nginx/mime.types;
+    access_log off;
+    client_body_temp_path $run/nginx/body;
+    proxy_temp_path $run/nginx/proxy;
+    fastcgi_temp_path $run/nginx/fastcgi;
+    uwsgi_temp_path $run/nginx/uwsgi;
+    scgi_temp_path $run/nginx/scgi;
+
+    server {
+        $(listen "$NOVNC_PORT")
+        $acl
+        root /usr/share/novnc;
+
+        location = /websockify {
+            proxy_pass http://unix:$run/websockify.sock;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade \$http_upgrade;
+            proxy_set_header Connection upgrade;
+            proxy_read_timeout 1d;
+            proxy_send_timeout 1d;
+        }
+    }
+}
+EOF
+    fi
+    nginx -e stderr -c "$run/nginx/nginx.conf" &
+    pids+=($!)
 fi
 
 until xdpyinfo >/dev/null 2>&1; do
@@ -68,5 +139,5 @@ while true; do
 done &
 pids+=($!)
 
-# Xvnc or websockify dying ends the container
+# Xvnc, websockify or nginx dying ends the container
 wait -n "${pids[@]}"
