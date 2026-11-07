@@ -64,14 +64,12 @@ Everything WinBox keeps (settings, saved addresses, workspaces, cache) and the n
 
 ### HTTPS and clipboard
 
-noVNC is served over HTTPS only (a plain `http://` request on the port gets redirected), because browsers give the clipboard API to secure pages only. On first start a self-signed certificate for the container's hostname and addresses is generated into `/data/tls`. To use your own, put `cert.pem` (with the chain) and `key.pem` there and restart.
+noVNC is served over HTTPS only (a plain `http://` request on the port gets redirected), because browsers let secure pages only write to the clipboard. On first start a self-signed certificate for the container's hostname and addresses is generated into `/data/tls`. To use your own, put `cert.pem` (with the chain) and `key.pem` there and restart.
 
 With that in place:
 
 - whatever is copied in WinBox lands in the local clipboard
-- Ctrl+V, Ctrl+Shift+V and Shift+Insert in WinBox paste the local clipboard
-- Chromium-based browsers ask once for clipboard access; after that the local clipboard is also synced whenever you come back to the tab, so paste from WinBox's own menus works too
-- Firefox shows a small "Paste" button on every paste, that is how Firefox guards clipboard reads
+- Ctrl+V, Ctrl+Shift+V and Shift+Insert in WinBox paste the local clipboard. The page catches the browser's own paste of that key, so no clipboard permission is asked for. Pasting from WinBox's right-click menu uses what was last copied or pasted in WinBox
 
 A native VNC client (TigerVNC, RealVNC) syncs the clipboard on its own.
 
