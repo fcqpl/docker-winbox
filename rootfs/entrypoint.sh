@@ -128,6 +128,8 @@ http {
         # Plain HTTP on the TLS port only gets a redirect
         error_page 497 =301 https://\$http_host\$request_uri;
         root /usr/share/novnc;
+        # Revalidate, so a new image's noVNC files are picked up at once
+        add_header Cache-Control no-cache;
 
         location = /websockify {
             proxy_pass http://unix:$run/websockify.sock;

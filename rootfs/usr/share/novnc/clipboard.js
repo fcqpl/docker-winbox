@@ -63,6 +63,9 @@ if (clip) {
         if (!paste || !rfb || ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName)) return;
         e.preventDefault();
         e.stopImmediatePropagation();
+        // On Windows noVNC holds ControlLeft back for up to 100 ms (AltGr
+        // detection) and releases it on the next key, which it won't see here
+        rfb._keyboard?._interruptAltGrSequence?.();
         swallowUp = e.code;
         const mods = { ctrl: e.ctrlKey, shift: e.shiftKey };
         const keysym = e.code === "Insert" ? 0xff63 : (e.shiftKey ? 0x56 : 0x76);
